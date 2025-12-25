@@ -5,6 +5,10 @@
 
 HashcatNexus is a sophisticated wrapper that automates and optimizes hashcat-based password cracking attacks. It provides vendor-specific wordlist generation, rule selection, multi-phase attack orchestration, and real-time progress tracking.
 
+### ⚠️ LEGAL NOTICE
+
+**AUTHORIZED USE ONLY.** This tool is for security research, penetration testing, and password recovery on systems you own or have explicit written authorization to test. Unauthorized access is illegal under CFAA (18 U.S.C. § 1030), GDPR, Computer Misuse Act 1990, and equivalent laws worldwide. Users assume all legal responsibility.
+
 ---
 
 ## Table of Contents
@@ -22,6 +26,7 @@ HashcatNexus is a sophisticated wrapper that automates and optimizes hashcat-bas
 - [Rule System](#rule-system)
 - [Examples](#examples)
 - [Resource Management](#resource-management)
+- [Legal Disclaimer](#legal-disclaimer)
 
 ---
 
@@ -601,11 +606,55 @@ MIT License - See [LICENSE](LICENSE) for details.
 
 ---
 
-## Version History
+## Legal Disclaimer
 
-- **v3.0** (2025) - Multi-phase orchestration, hybrid attacks, 14 vendor support, real-time progress
-- **v2.x** - Vendor-specific wordlists, rule auto-selection
-- **v1.x** - Initial interactive wizard, basic hash detection
+### Authorized Use Only
+
+HashcatNexus is provided exclusively for:
+- Penetration testing on systems you own
+- Security audits with explicit written authorization
+- Password recovery for your own accounts/systems
+- Educational research in authorized environments
+
+### Prohibited Activities
+
+Unauthorized access to computer systems violates:
+- Computer Fraud and Abuse Act (CFAA) - 18 U.S.C. § 1030 (US)
+- Computer Misuse Act 1990 (UK)
+- GDPR Articles 32-34 (EU)
+- Budapest Convention on Cybercrime
+- Equivalent laws in your jurisdiction
+
+**Do not:**
+- Attack networks without documented authorization
+- Access wireless networks you do not own
+- Bypass authentication on unauthorized systems
+- Use this tool for malicious or illegal purposes
+
+### Limitation of Liability
+
+THE SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND. THE AUTHORS:
+- Disclaim all warranties including merchantability and fitness for purpose
+- Accept no liability for damages, data loss, or legal consequences
+- Provide no guarantee of functionality or security
+- Are not responsible for user actions or compliance failures
+
+### Your Responsibilities
+
+By using this software, you agree that:
+- You are solely responsible for lawful use in your jurisdiction
+- You will obtain proper authorization before testing any system
+- You will comply with all applicable laws and regulations
+- You understand legal risks of unauthorized access
+- You indemnify the authors against claims from your use
+
+### No Endorsement of Illegal Activity
+
+This tool does not encourage or endorse unauthorized access. It is developed exclusively for legitimate security professionals operating within legal boundaries.
+
+---
+
+**BY USING THIS SOFTWARE, YOU ACCEPT THESE TERMS AND FULL RESPONSIBILITY FOR YOUR ACTIONS.**
 
 ---
 
