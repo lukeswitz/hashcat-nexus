@@ -25,5 +25,7 @@ This is a work in progress. Small size, big impact custom wordlists, and links t
 
 - [Rule Collection](https://github.com/ibnaleem/rules)
 
+### Credits
 
+@ibnaleem - Comparison/benchmark sheets and rules collection
 
