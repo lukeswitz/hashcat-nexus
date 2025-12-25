@@ -2,6 +2,13 @@
 
 This is a work in progress. Small size, big impact custom wordlists, and links to others. Efficacy comparisons including rules and masks
 
+### Custom Tools
+
+- [WordSentry](https://github.com/Root-Down-Digital/pentesting-resources/tree/main/scripts/utilities/passwords#wordsentry-usage) gathers location-specific words for password profiling.
+
+- [PassGen](https://github.com/Root-Down-Digital/pentesting-resources/tree/main/scripts/utilities/passwords#passgen-usage) transforms text files into clean password wordlists using hashcat rules. (Built for use with WordSentry).
+
+
 ### Lists:
 - [wpa-sec.stanev.org Dicts](https://wpa-sec.stanev.org/?dicts)
 
