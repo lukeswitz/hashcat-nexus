@@ -5,6 +5,8 @@
 
 HashcatNexus is a sophisticated wrapper that automates and optimizes hashcat-based password cracking attacks. It provides vendor-specific wordlist generation, rule selection, multi-phase attack orchestration, and real-time progress tracking.
 
+Wordlists, rules and mask links, tools and benchmarks can be found in the wordlists [folder](https://github.com/lukeswitz/hashcat-nexus/tree/main/wordlists) 
+
 ### ⚠️ LEGAL NOTICE
 
 **AUTHORIZED USE ONLY.** This tool is for security research, penetration testing, and password recovery on systems you own or have explicit written authorization to test. Unauthorized access is illegal under CFAA (18 U.S.C. § 1030), GDPR, Computer Misuse Act 1990, and equivalent laws worldwide. Users assume all legal responsibility.
