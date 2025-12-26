@@ -11,6 +11,7 @@ This is a work in progress. Small size, big impact custom wordlists, and links t
 
 ### Lists:
 - [wpa-sec.stanev.org Dicts](https://wpa-sec.stanev.org/?dicts)
+- [netgear-lower](https://github.com/lukeswitz/hashcat-nexus/blob/main/wordlists/netgear_lower.txt) - Netgear pattern list, use with 3 digit mask option. Credit: jx
 
 ### Comparison & Benchmarks
 
