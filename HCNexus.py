@@ -1811,6 +1811,206 @@ class HashcatNexus:
             cmd_parts.append("--potfile-disable")
 
         return " ".join(cmd_parts)
+    
+    def build_custom_hybrid_mask_menu(self) -> List[Tuple[str, str]]:
+        """Interactive menu to build custom hybrid masks with preview"""
+        print("\n" + "═" * 80)
+        print("🎯 HYBRID MASK BUILDER - Interactive Mode")
+        print("═" * 80)
+        
+        print("\n📌 What are Hybrid Masks?")
+        print("   Hybrid = Wordlist + Mask Pattern (e.g., password + ?d?d?d)")
+        print("   Example: netgear.txt + ?d?d?d = netgear000, netgear001...netgear999\n")
+        
+        masks = []
+        
+        print("Select mask patterns to append to your wordlist:")
+        print("─" * 80)
+        
+        predefined_masks = {
+            '1': {
+                'mask': '?d?d',
+                'description': '2 digits',
+                'examples': ['password00', 'password24', 'password99'],
+                'count': 100,
+                'use_case': 'Quick test, very common pattern'
+            },
+            '2': {
+                'mask': '?d?d?d',
+                'description': '3 digits (e.g., 000-999)',
+                'examples': ['password000', 'password024', 'password999'],
+                'count': 1000,
+                'use_case': 'Standard - your original request'
+            },
+            '3': {
+                'mask': '?d?d?d?d',
+                'description': '4 digits (year pattern)',
+                'examples': ['password2020', 'password2024', 'password9999'],
+                'count': 10000,
+                'use_case': 'Common for year-based passwords'
+            },
+            '4': {
+                'mask': '?l?d?d?d',
+                'description': 'lowercase letter + 3 digits',
+                'examples': ['passworda000', 'passwordz999', 'passwordm024'],
+                'count': 26000,
+                'use_case': 'Mixed alphanumeric pattern'
+            },
+            '5': {
+                'mask': '?u?d?d?d',
+                'description': 'UPPERCASE letter + 3 digits',
+                'examples': ['passwordA000', 'passwordZ999', 'passwordM024'],
+                'count': 26000,
+                'use_case': 'Corporate password patterns'
+            },
+            '6': {
+                'mask': '?s',
+                'description': 'single special character',
+                'examples': ['password!', 'password@', 'password#'],
+                'count': 32,
+                'use_case': 'Single special char suffix'
+            },
+            '7': {
+                'mask': '?d?d?s',
+                'description': '2 digits + special character',
+                'examples': ['password00!', 'password24@', 'password99#'],
+                'count': 3200,
+                'use_case': 'Advanced requirement'
+            },
+            '8': {
+                'mask': 'custom',
+                'description': 'Create your own mask',
+                'examples': ['?u?l?l?d?d', '?l?l?l?d?d?d?d'],
+                'count': 0,
+                'use_case': 'Advanced users'
+            },
+        }
+        
+        while True:
+            print("\nAvailable hybrid mask patterns:")
+            print()
+            
+            for key, info in predefined_masks.items():
+                if info['mask'] != 'custom':
+                    print(f"  {key}) {info['description']:<35} ({info['count']:>6,} combinations)")
+                    print(f"     Examples: {', '.join(info['examples'])}")
+                    print(f"     Use case: {info['use_case']}")
+                else:
+                    print(f"  {key}) {info['description']}")
+            
+            print(f"  9) View selected masks")
+            print(f"  0) Done - proceed with attack")
+            
+            choice = input("\nEnter mask number (1-9, 0 to finish): ").strip()
+            
+            if choice == '0':
+                break
+            elif choice == '9':
+                if masks:
+                    print("\n✓ Selected hybrid masks:")
+                    for i, (mask, desc) in enumerate(masks, 1):
+                        print(f"   {i}. {mask:<20} - {desc}")
+                else:
+                    print("\n⚠️  No masks selected yet")
+                continue
+            elif choice in predefined_masks:
+                if choice == '8':
+                    custom_mask = input("\nEnter custom mask (e.g., ?d?d?d?d or ?u?l?d): ").strip()
+                    if custom_mask:
+                        if self._validate_mask_syntax(custom_mask):
+                            custom_desc = input("Description (optional): ").strip() or "Custom"
+                            masks.append((custom_mask, custom_desc))
+                            print(f"✓ Added: {custom_mask}")
+                        else:
+                            print("❌ Invalid mask syntax")
+                else:
+                    info = predefined_masks[choice]
+                    masks.append((info['mask'], info['description']))
+                    print(f"✓ Added: {info['mask']}")
+            else:
+                print("❌ Invalid choice")
+        
+        return masks if masks else [('?d?d?d', '3 digits')]
+
+    def _validate_mask_syntax(self, mask: str) -> bool:
+        """Validate mask syntax"""
+        i = 0
+        while i < len(mask):
+            if mask[i] == '?':
+                if i + 1 < len(mask) and mask[i + 1] in 'ludshabd':
+                    i += 2
+                    continue
+                else:
+                    return False
+            else:
+                i += 1
+        return True
+
+    def preview_hybrid_attack(self, wordlist_size: int, masks: List[Tuple[str, str]]) -> None:
+        """Show preview of hybrid attack combinations"""
+        print("\n" + "═" * 80)
+        print("📊 HYBRID ATTACK PREVIEW")
+        print("═" * 80)
+        
+        total_combinations = 0
+        
+        for mask, desc in masks:
+            mask_combinations = self._estimate_mask_combinations(mask)
+            attack_combinations = wordlist_size * mask_combinations
+            total_combinations += attack_combinations
+            
+            print(f"\n✓ Mask: {mask} ({desc})")
+            print(f"  Combinations per word: {mask_combinations:,}")
+            print(f"  Total candidates: {attack_combinations:,}")
+            
+            samples = self._generate_sample_candidates("password", mask, 3)
+            print(f"  Sample candidates: {', '.join(samples)}")
+        
+        print(f"\n{'─' * 80}")
+        print(f"Total mask combinations: {total_combinations:,}")
+        
+        time_est = self.estimate_attack_time(22000, wordlist_size, 0, 'medium')
+        print(f"Estimated time: {time_est['estimated_time']}")
+        print(f"Success probability: {time_est['success_probability']}")
+
+    def _estimate_mask_combinations(self, mask: str) -> int:
+        """Calculate combinations from mask"""
+        charset_sizes = {
+            '?l': 26, '?u': 26, '?d': 10, '?s': 33,
+            '?h': 16, '?H': 16, '?a': 95, '?b': 256,
+        }
+        combinations = 1
+        i = 0
+        while i < len(mask):
+            if mask[i:i+2] in charset_sizes:
+                combinations *= charset_sizes[mask[i:i+2]]
+                i += 2
+            else:
+                i += 1
+        return combinations
+
+    def _generate_sample_candidates(self, word: str, mask: str, count: int) -> List[str]:
+        """Generate sample candidates for preview"""
+        sample_map = {
+            '?d': ['0', '5', '9'],
+            '?l': ['a', 'm', 'z'],
+            '?u': ['A', 'M', 'Z'],
+            '?s': ['!', '@', '#'],
+        }
+        
+        def generate_one(w, m, idx=0):
+            if idx >= len(m):
+                return w
+            if m[idx:idx+2] in sample_map:
+                next_char = sample_map[m[idx:idx+2]][min(idx // 2, count-1)]
+                return generate_one(w + next_char, m, idx + 2)
+            else:
+                return generate_one(w + m[idx], m, idx + 1)
+        
+        samples = []
+        for i in range(count):
+            samples.append(generate_one(word, mask))
+        return samples
 
     def check_remaining_hashes(self, hash_file: str, output_file: str = None) -> Dict[str, Any]:
         """Check how many hashes remain uncracked"""
@@ -1902,55 +2102,51 @@ class HashcatNexus:
                                   wordlists: List[str], rules: List[str],
                                   vendor: str = None, memory_profile: str = 'medium',
                                   output_file: str = None, session: str = None,
-                                  enable_brute: bool = False):
+                                  enable_brute: bool = False,
+                                  hybrid_masks: List[Tuple[str, str]] = None):
         """Execute multi-phase attack: wordlist+rules first, then brute force on remaining"""
 
         print("\n" + "═" * 80)
         print("⚡ MULTI-PHASE ATTACK EXECUTION")
         print("═" * 80)
 
-        # Phase 1: Wordlist + Rules Attack (skip if no rules/wordlists or already completed)
-        skip_phase1 = not rules or (rules == [])
+        # Phase 1: Wordlist + Rules Attack
+        print("\n📋 PHASE 1: Wordlist + Rules Attack")
+        print("─" * 80)
 
-        if not skip_phase1:
-            print("\n📋 PHASE 1: Wordlist + Rules Attack")
-            print("─" * 80)
+        phase1_cmd = self.build_attack_command(
+            hash_file=hash_file,
+            hash_mode=hash_mode,
+            wordlists=wordlists,
+            rules=rules,
+            vendor=vendor,
+            memory_profile=memory_profile,
+            output_file=output_file,
+            session=f"{session}_phase1" if session else None,
+            enable_brute=False
+        )
 
-            phase1_cmd = self.build_attack_command(
-                hash_file=hash_file,
-                hash_mode=hash_mode,
-                wordlists=wordlists,
-                rules=rules,
-                vendor=vendor,
-                memory_profile=memory_profile,
-                output_file=output_file,
-                session=f"{session}_phase1" if session else None,
-                enable_brute=False
-            )
+        print(f"\n✓ Phase 1 command:\n{phase1_cmd}\n")
 
-            print(f"\n✓ Phase 1 command:\n{phase1_cmd}\n")
+        execute = input("▶️  Execute Phase 1 now? (Y/n): ").strip().lower()
+        if execute != 'n':
+            print("\n" + "═" * 80)
+            print("⚡ EXECUTING PHASE 1")
+            print("═" * 80)
+            print("\n💡 Press Ctrl+C anytime to stop and see progress\n")
 
-            execute = input("▶️  Execute Phase 1 now? (Y/n): ").strip().lower()
-            if execute != 'n':
-                print("\n" + "═" * 80)
-                print("⚡ EXECUTING PHASE 1")
+            try:
+                subprocess.run(phase1_cmd, shell=True)
+            except KeyboardInterrupt:
+                print("\n\n" + "═" * 80)
+                print("⚠️  ATTACK INTERRUPTED BY USER (Ctrl+C)")
                 print("═" * 80)
-                print("\n💡 Press Ctrl+C anytime to stop and see progress\n")
+                print("\n💡 Checking progress before exit...\n")
 
-                try:
-                    subprocess.run(phase1_cmd, shell=True)
-                except KeyboardInterrupt:
-                    print("\n\n" + "═" * 80)
-                    print("⚠️  ATTACK INTERRUPTED BY USER (Ctrl+C)")
-                    print("═" * 80)
-                    print("\n💡 Checking progress before exit...\n")
-
-                    # Show resume command immediately
-                    if session:
-                        print(f"📌 To resume this attack later:")
-                        print(f"   hashcat --session {session}_phase1 --restore\n")
-        else:
-            print("\n📋 Skipping Phase 1 (Wordlist + Rules) - already completed")
+                # Show resume command immediately
+                if session:
+                    print(f"📌 To resume this attack later:")
+                    print(f"   hashcat --session {session}_phase1 --restore\n")
 
         # Check results
         print("\n" + "═" * 80)
@@ -1984,59 +2180,60 @@ class HashcatNexus:
                 print(f"   hashcat --session {session}_phase1 --restore")
 
             # Phase 1.5: Hybrid Attack (wordlist + mask patterns)
+            # Phase 1.5: Hybrid Attack (wordlist + mask patterns)
             if status['remaining'] > 0 and hash_mode in [22000, 2500]:
                 print("\n" + "═" * 80)
-                print("📋 PHASE 1.5: Hybrid Attack (Wordlist + Mask - 2025 Best Patterns)")
+                print("📋 PHASE 1.5: Hybrid Attack (Wordlist + Custom Masks)")
                 print("─" * 80)
-                print("Based on NetSPI & Rapid7 research - these patterns crack 29%+ of passwords")
 
-                hybrid_masks = self.generate_hybrid_masks()
-                print(f"\n✓ Generated {len(hybrid_masks)} hybrid attack patterns:")
-                for i, mask in enumerate(hybrid_masks, 1):
-                    examples = {
-                        '?d?d': 'password24',
-                        '?d?d?d?d': 'password2024',
-                        '?s': 'password!',
-                        '?d?d?s': 'password24!'
-                    }
-                    example = examples.get(mask, '')
-                    print(f"   {i}. {mask:15} (e.g., {example})")
+                # Use pre-selected masks or ask now
+                if hybrid_masks is None:
+                    custom_masks = self.build_custom_hybrid_mask_menu()
+                else:
+                    custom_masks = hybrid_masks 
+                
+                # Preview the attack
+                try:
+                    wl_size = sum(1 for _ in open(wordlists[0], 'r', encoding='utf-8', errors='ignore')) if wordlists else 1000000
+                except:
+                    wl_size = 1000000
+                self.preview_hybrid_attack(wl_size, custom_masks)
+                
+                execute_hybrid = input("\n▶️  Execute Hybrid Attack? (Y/n): ").strip().lower()
 
-                hybrid_cmd = self.build_hybrid_command(
-                    hash_file=hash_file,
-                    hash_mode=hash_mode,
-                    wordlists=wordlists,
-                    hybrid_masks=hybrid_masks,
-                    vendor=vendor,
-                    memory_profile=memory_profile,
-                    output_file=output_file,
-                    session=f"{session}_hybrid" if session else None
-                )
-
-                print(f"\n✓ Hybrid attack command prepared")
-                print(f"   Remaining {status['remaining']} hashes will be targeted\n")
-
-                execute_hybrid = input("▶️  Execute Hybrid Attack? (Y/n): ").strip().lower()
                 if execute_hybrid != 'n':
                     print("\n" + "═" * 80)
                     print("⚡ EXECUTING HYBRID ATTACK")
                     print("═" * 80)
-                    print("\n💡 Press Ctrl+C anytime to stop and see progress\n")
+                    print(f"\n📊 Attack Configuration:")
+                    print(f"   Hash mode: {hash_mode}")
+                    print(f"   Wordlists: {len(wordlists)}")
+                    print(f"   Hybrid masks: {len(custom_masks)}\n")
 
                     try:
-                        # Run hybrid attack for each mask pattern
-                        for i, mask in enumerate(hybrid_masks, 1):
-                            print(f"\n🎯 Trying hybrid pattern {i}/{len(hybrid_masks)}: {mask}")
-                            mask_cmd = hybrid_cmd.replace(hybrid_masks[0], mask)
-                            subprocess.run(mask_cmd, shell=True)
+                        for i, (mask, desc) in enumerate(custom_masks, 1):
+                            print(f"\n🎯 Running mask {i}/{len(custom_masks)}: {mask} ({desc})")
+                            print("─" * 80)
 
-                            # Check if all cracked
+                            cmd = self.build_hybrid_command(
+                                hash_file=hash_file,
+                                hash_mode=hash_mode,
+                                wordlists=wordlists,
+                                hybrid_masks=[mask],
+                                vendor=vendor,
+                                memory_profile=memory_profile,
+                                output_file=output_file,
+                                session=f"{session}_hybrid_m{i}" if session else None
+                            )
+
+                            subprocess.run(cmd, shell=True)
+
                             current_status = self.check_remaining_hashes(hash_file, output_file)
-                            if current_status['remaining'] == 0:
-                                print("\n🎉 All hashes cracked!")
+                            if current_status.get('remaining', 0) == 0:
+                                print("🎉 All hashes cracked!")
                                 break
-                            else:
-                                print(f"   Still remaining: {current_status['remaining']} hashes")
+                            elif 'error' not in current_status:
+                                print(f"   Progress: {current_status['cracked']}/{current_status['total']} cracked")
                     except KeyboardInterrupt:
                         print("\n\n" + "═" * 80)
                         print("⚠️  HYBRID ATTACK INTERRUPTED BY USER (Ctrl+C)")
@@ -2047,7 +2244,6 @@ class HashcatNexus:
                             print(f"📌 To resume Hybrid attack:")
                             print(f"   hashcat --session {session}_hybrid --restore\n")
 
-                    # Update status after hybrid attack
                     status = self.check_remaining_hashes(hash_file, output_file)
                     print(f"\n✓ After Hybrid Attack: {status['cracked']}/{status['total']} cracked")
                     print(f"⏳ Remaining: {status['remaining']} hashes")
@@ -2288,9 +2484,17 @@ class HashcatNexus:
         print(f"  • Success probability: {time_estimate['success_probability']}")
         print(f"  • Recommendation: {time_estimate['recommendation']}")
 
+        # Hybrid masks selection
+        hybrid_masks = None
+        if hash_mode in [22000, 2500]:
+            use_hybrid = input("\n🎯 Use hybrid masks (wordlist + patterns)? (y/N): ").strip().lower()
+            if use_hybrid == 'y':
+                hybrid_masks = self.build_custom_hybrid_mask_menu()
+                self.preview_hybrid_attack(wordlist_size, hybrid_masks)
+
         enable_brute = False
         if hash_mode in [22000, 2500]:
-            enable_brute = input("\n🔓 Enable brute force masks? (y/N): ").strip().lower() == 'y'
+            enable_brute = input("\n🔓 Enable mask brute force on remaining hashes? (y/N): ").strip().lower() == 'y'
 
         output_file = input("\n💾 Output file (optional, for results): ").strip() or None
         session_name = input("\n💿 Session name (optional, for resuming): ").strip() or None
@@ -2306,7 +2510,8 @@ class HashcatNexus:
                 memory_profile=memory_profile,
                 output_file=output_file,
                 session=session_name,
-                enable_brute=True
+                enable_brute=True,
+                hybrid_masks=hybrid_masks
             )
         else:
             # Standard single-phase attack
