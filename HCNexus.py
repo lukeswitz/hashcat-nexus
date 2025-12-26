@@ -2114,17 +2114,29 @@ class HashcatNexus:
         print("\n📋 PHASE 1: Wordlist + Rules Attack")
         print("─" * 80)
 
-        phase1_cmd = self.build_attack_command(
-            hash_file=hash_file,
-            hash_mode=hash_mode,
-            wordlists=wordlists,
-            rules=rules,
-            vendor=vendor,
-            memory_profile=memory_profile,
-            output_file=output_file,
-            session=f"{session}_phase1" if session else None,
-            enable_brute=False
-        )
+        if hybrid_masks:
+            phase1_cmd = self.build_hybrid_command(
+                hash_file=hash_file,
+                hash_mode=hash_mode,
+                wordlists=wordlists,
+                hybrid_masks=[m[0] for m in hybrid_masks],
+                vendor=vendor,
+                memory_profile=memory_profile,
+                output_file=output_file,
+                session=f"{session}_phase1" if session else None
+            )
+        else:
+            phase1_cmd = self.build_attack_command(
+                hash_file=hash_file,
+                hash_mode=hash_mode,
+                wordlists=wordlists,
+                rules=rules,
+                vendor=vendor,
+                memory_profile=memory_profile,
+                output_file=output_file,
+                session=f"{session}_phase1" if session else None,
+                enable_brute=False
+            )
 
         print(f"\n✓ Phase 1 command:\n{phase1_cmd}\n")
 
@@ -2179,74 +2191,49 @@ class HashcatNexus:
                 print(f"\n💡 To resume this attack later, use:")
                 print(f"   hashcat --session {session}_phase1 --restore")
 
-            # Phase 1.5: Hybrid Attack (wordlist + mask patterns)
-            # Phase 1.5: Hybrid Attack (wordlist + mask patterns)
-            if status['remaining'] > 0 and hash_mode in [22000, 2500]:
+            # Phase 1.5: Run additional hybrid masks if more remain
+            if status['remaining'] > 0 and hash_mode in [22000, 2500] and hybrid_masks and len(hybrid_masks) > 1:
                 print("\n" + "═" * 80)
-                print("📋 PHASE 1.5: Hybrid Attack (Wordlist + Custom Masks)")
+                print("📋 PHASE 1.5: Running Additional Hybrid Masks")
                 print("─" * 80)
 
-                # Use pre-selected masks or ask now
-                if hybrid_masks is None:
-                    custom_masks = self.build_custom_hybrid_mask_menu()
-                else:
-                    custom_masks = hybrid_masks 
-                
-                # Preview the attack
                 try:
-                    wl_size = sum(1 for _ in open(wordlists[0], 'r', encoding='utf-8', errors='ignore')) if wordlists else 1000000
-                except:
-                    wl_size = 1000000
-                self.preview_hybrid_attack(wl_size, custom_masks)
-                
-                execute_hybrid = input("\n▶️  Execute Hybrid Attack? (Y/n): ").strip().lower()
+                    for i, (mask, desc) in enumerate(hybrid_masks[1:], 2):
+                        print(f"\n🎯 Running mask {i}/{len(hybrid_masks)}: {mask} ({desc})")
+                        print("─" * 80)
 
-                if execute_hybrid != 'n':
-                    print("\n" + "═" * 80)
-                    print("⚡ EXECUTING HYBRID ATTACK")
+                        cmd = self.build_hybrid_command(
+                            hash_file=hash_file,
+                            hash_mode=hash_mode,
+                            wordlists=wordlists,
+                            hybrid_masks=[mask],
+                            vendor=vendor,
+                            memory_profile=memory_profile,
+                            output_file=output_file,
+                            session=f"{session}_hybrid_m{i}" if session else None
+                        )
+
+                        subprocess.run(cmd, shell=True)
+
+                        current_status = self.check_remaining_hashes(hash_file, output_file)
+                        if current_status.get('remaining', 0) == 0:
+                            print("🎉 All hashes cracked!")
+                            break
+                        elif 'error' not in current_status:
+                            print(f"   Progress: {current_status['cracked']}/{current_status['total']} cracked")
+                except KeyboardInterrupt:
+                    print("\n\n" + "═" * 80)
+                    print("⚠️  HYBRID ATTACK INTERRUPTED BY USER (Ctrl+C)")
                     print("═" * 80)
-                    print(f"\n📊 Attack Configuration:")
-                    print(f"   Hash mode: {hash_mode}")
-                    print(f"   Wordlists: {len(wordlists)}")
-                    print(f"   Hybrid masks: {len(custom_masks)}\n")
+                    print("\n💡 Checking progress before continuing...\n")
 
-                    try:
-                        for i, (mask, desc) in enumerate(custom_masks, 1):
-                            print(f"\n🎯 Running mask {i}/{len(custom_masks)}: {mask} ({desc})")
-                            print("─" * 80)
+                    if session:
+                        print(f"📌 To resume:")
+                        print(f"   hashcat --session {session}_hybrid_m{i} --restore\n")
 
-                            cmd = self.build_hybrid_command(
-                                hash_file=hash_file,
-                                hash_mode=hash_mode,
-                                wordlists=wordlists,
-                                hybrid_masks=[mask],
-                                vendor=vendor,
-                                memory_profile=memory_profile,
-                                output_file=output_file,
-                                session=f"{session}_hybrid_m{i}" if session else None
-                            )
-
-                            subprocess.run(cmd, shell=True)
-
-                            current_status = self.check_remaining_hashes(hash_file, output_file)
-                            if current_status.get('remaining', 0) == 0:
-                                print("🎉 All hashes cracked!")
-                                break
-                            elif 'error' not in current_status:
-                                print(f"   Progress: {current_status['cracked']}/{current_status['total']} cracked")
-                    except KeyboardInterrupt:
-                        print("\n\n" + "═" * 80)
-                        print("⚠️  HYBRID ATTACK INTERRUPTED BY USER (Ctrl+C)")
-                        print("═" * 80)
-                        print("\n💡 Checking progress before continuing...\n")
-
-                        if session:
-                            print(f"📌 To resume Hybrid attack:")
-                            print(f"   hashcat --session {session}_hybrid --restore\n")
-
-                    status = self.check_remaining_hashes(hash_file, output_file)
-                    print(f"\n✓ After Hybrid Attack: {status['cracked']}/{status['total']} cracked")
-                    print(f"⏳ Remaining: {status['remaining']} hashes")
+                status = self.check_remaining_hashes(hash_file, output_file)
+                print(f"\n✓ After Hybrid Masks: {status['cracked']}/{status['total']} cracked")
+                print(f"⏳ Remaining: {status['remaining']} hashes")
 
             # Phase 2: Brute Force (if enabled and hashes remain)
             if enable_brute and status['remaining'] > 0 and hash_mode in [22000, 2500]:
@@ -2499,8 +2486,8 @@ class HashcatNexus:
         output_file = input("\n💾 Output file (optional, for results): ").strip() or None
         session_name = input("\n💿 Session name (optional, for resuming): ").strip() or None
 
-        # Multi-phase attack for brute force enabled
-        if enable_brute:
+        # Multi-phase attack for brute force/masks enabled
+        if enable_brute or hybrid_masks:
             self.execute_multiphase_attack(
                 hash_file=hash_file,
                 hash_mode=hash_mode,
