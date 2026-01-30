@@ -1566,12 +1566,11 @@ class HashcatNexus:
                             wordlists: List[str], rules: List[str],
                             vendor: str = None, memory_profile: str = 'medium',
                             output_file: str = None, session: str = None,
-                            enable_brute: bool = False) -> str:
-        """Build hashcat command - FIXED TO HANDLE WORDLIST-ONLY MODE"""
+                            enable_brute: bool = False, use_gpu: bool = True) -> str:
         cmd_parts = ["hashcat", "-m", str(hash_mode)]
-
+        
         devices = self.detect_available_devices()
-        if devices['has_metal'] or devices['has_gpu']:
+        if (devices['has_metal'] or devices['has_gpu']) and use_gpu:
             cmd_parts.extend(["-D", "2"])
         else:
             cmd_parts.extend(["-D", "1"])
@@ -2365,7 +2364,8 @@ class HashcatNexus:
                 memory_profile=memory_profile,
                 output_file=output_file,
                 session=session_name,
-                enable_brute=False
+                enable_brute=False,
+                use_gpu=use_gpu
             )
 
             print(f"\n[+] Generated optimized command:\n")
