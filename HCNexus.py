@@ -1805,7 +1805,7 @@ class HashcatNexus:
             else:
                 print("[-] Invalid choice")
         
-        return masks if masks else [('?d?d?d', '3 digits')]
+        return masks if masks else None
 
     def _validate_mask_syntax(self, mask: str) -> bool:
         """Validate mask syntax"""
@@ -2328,7 +2328,8 @@ class HashcatNexus:
             use_hybrid = input("\n[*] Use hybrid masks (wordlist + patterns)? (y/N): ").strip().lower()
             if use_hybrid == 'y':
                 hybrid_masks = self.build_custom_hybrid_mask_menu()
-                self.preview_hybrid_attack(wordlist_size, hybrid_masks)
+                if hybrid_masks:
+                    self.preview_hybrid_attack(wordlist_size, hybrid_masks)
 
         enable_brute = False
         if hash_mode in [22000, 2500]:
