@@ -59,8 +59,6 @@ class HashcatNexus:
                 'w': '1',
                 'O': True,
                 'max_len': '8',
-                'kernel_accel': '8',
-                'kernel_loops': '8',
                 'segment_size': '8',
                 'description': 'Minimal memory (< 1GB RAM, CPU only)'
             },
@@ -68,8 +66,6 @@ class HashcatNexus:
                 'w': '2',
                 'O': True,
                 'max_len': '12',
-                'kernel_accel': '16',
-                'kernel_loops': '16',
                 'segment_size': '32',
                 'description': 'Balanced (2-4GB RAM, integrated GPU)'
             },
@@ -77,8 +73,6 @@ class HashcatNexus:
                 'w': '3',
                 'O': True,
                 'max_len': '14',
-                'kernel_accel': '32',
-                'kernel_loops': '32',
                 'segment_size': None,
                 'description': 'High performance (8GB+ RAM, dedicated GPU)'
             },
@@ -86,8 +80,6 @@ class HashcatNexus:
                 'w': '4',
                 'O': True,
                 'max_len': '16',
-                'kernel_accel': '64',
-                'kernel_loops': '64',
                 'segment_size': None,
                 'description': 'Maximum speed (16GB+ RAM, high-end GPU)'
             }
@@ -1597,12 +1589,6 @@ class HashcatNexus:
         if profile.get('O', False):
             cmd_parts.append("-O")
 
-        if profile.get('kernel_accel'):
-            cmd_parts.extend(["--kernel-accel", profile['kernel_accel']])
-
-        if profile.get('kernel_loops'):
-            cmd_parts.extend(["--kernel-loops", profile['kernel_loops']])
-
         if profile.get('segment_size'):
             cmd_parts.extend(["--segment-size", profile['segment_size']])
 
@@ -2358,8 +2344,6 @@ class HashcatNexus:
         print(f"    [*] Workload: Level {profile['w']}")
         if profile.get('O'):
             print(f"    [*] Optimized kernels: Enabled (less memory, max length {profile['max_len']} chars)")
-        if profile.get('kernel_accel'):
-            print(f"    [*] Kernel tuning: accel={profile['kernel_accel']}, loops={profile['kernel_loops']}")
         if profile.get('segment_size'):
             print(f"    [*] Wordlist chunking: {profile['segment_size']}MB segments (prevents OOM)")
 
