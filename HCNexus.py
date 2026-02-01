@@ -1516,10 +1516,21 @@ class HashcatNexus:
                 'has_opencl': False,
                 'has_pocl': False,
                 'is_low_memory': False,
+                'is_arm': False,
+                'is_macos': False,
                 'device_types': ['CPU'],
                 'gpu_memory': 0,
                 'device_count': 1
             }
+
+            # Detect macOS
+            import platform
+            if platform.system() == 'Darwin':
+                devices['is_macos'] = True
+
+            # Detect ARM architecture (causes LLVM crashes with PoCL)
+            if 'aarch64' in output.lower() or 'arm' in output.lower() or 'cpu-aarch64' in output.lower():
+                devices['is_arm'] = True
 
             # Detect PoCL (known to crash with certain hash modes)
             if 'PoCL' in output or 'pocl' in output.lower():
@@ -1624,13 +1635,29 @@ class HashcatNexus:
 
         devices = self.detect_available_devices()
 
-        # Handle PoCL (known to segfault with WPA modes like 22000)
-        if devices['has_pocl'] and not devices['has_gpu']:
+        # Handle macOS Metal backend crashes (segfault on device init)
+        if devices['is_macos'] and devices['has_metal'] and hash_mode in [22000, 2500, 22001]:
+            print("\n[!] WARNING: macOS Metal backend detected with WPA mode")
+            print("    Metal backend crashes with WPA on some macOS systems")
+            print("    Using CPU-only mode to avoid segfault")
+            cmd_parts.extend(["-D", "1"])
+            cmd_parts.append("--force")
+            memory_profile = 'low'
+        # Handle ARM + PoCL (LLVM crashes with WPA modes on ARM)
+        elif devices['is_arm'] and devices['has_pocl'] and not devices['has_gpu']:
+            print("\n[!] WARNING: ARM CPU with PoCL detected")
+            print("    Known LLVM issues with WPA modes on ARM architecture")
+            print("    Adding --force flag to bypass errors")
+            cmd_parts.append("--force")
+            memory_profile = 'low'
+            if devices['is_low_memory']:
+                print("    Low memory detected - using minimal workload settings")
+        # Handle PoCL on non-ARM (known to segfault with WPA modes like 22000)
+        elif devices['has_pocl'] and not devices['has_gpu'] and not devices['is_arm']:
             print("\n[!] WARNING: PoCL detected (CPU-only OpenCL)")
             print("    PoCL is known to crash with WPA/WPA2 modes")
-            print("    Using --backend-ignore-opencl to avoid segfault")
-            cmd_parts.append("--backend-ignore-opencl")
-            # Force low workload for stability on constrained systems
+            print("    Using --force and low workload")
+            cmd_parts.append("--force")
             if devices['is_low_memory']:
                 memory_profile = 'low'
         elif (devices['has_metal'] or devices['has_gpu']) and use_gpu:
@@ -1713,10 +1740,20 @@ class HashcatNexus:
 
         devices = self.detect_available_devices()
 
-        # Handle PoCL (known to segfault with WPA modes like 22000)
-        if devices['has_pocl'] and not devices['has_gpu']:
-            print("\n[!] WARNING: PoCL detected - using --backend-ignore-opencl")
-            cmd_parts.append("--backend-ignore-opencl")
+        # Handle macOS Metal backend crashes with WPA
+        if devices['is_macos'] and devices['has_metal'] and hash_mode in [22000, 2500, 22001]:
+            print("\n[!] WARNING: macOS Metal - using CPU-only to avoid segfault")
+            cmd_parts.extend(["-D", "1"])
+            cmd_parts.append("--force")
+            memory_profile = 'low'
+        # Handle ARM + PoCL (LLVM crashes with WPA modes on ARM)
+        elif devices['is_arm'] and devices['has_pocl'] and not devices['has_gpu']:
+            print("\n[!] WARNING: ARM CPU with PoCL - adding --force for compatibility")
+            cmd_parts.append("--force")
+            memory_profile = 'low'
+        elif devices['has_pocl'] and not devices['has_gpu'] and not devices['is_arm']:
+            print("\n[!] WARNING: PoCL detected - using --force and low workload")
+            cmd_parts.append("--force")
             if devices['is_low_memory']:
                 memory_profile = 'low'
         elif devices['has_metal'] or devices['has_gpu']:
@@ -1999,10 +2036,20 @@ class HashcatNexus:
 
         devices = self.detect_available_devices()
 
-        # Handle PoCL (known to segfault with WPA modes like 22000)
-        if devices['has_pocl'] and not devices['has_gpu']:
-            print("\n[!] WARNING: PoCL detected - using --backend-ignore-opencl")
-            cmd_parts.append("--backend-ignore-opencl")
+        # Handle macOS Metal backend crashes with WPA
+        if devices['is_macos'] and devices['has_metal'] and hash_mode in [22000, 2500, 22001]:
+            print("\n[!] WARNING: macOS Metal - using CPU-only to avoid segfault")
+            cmd_parts.extend(["-D", "1"])
+            cmd_parts.append("--force")
+            memory_profile = 'low'
+        # Handle ARM + PoCL (LLVM crashes with WPA modes on ARM)
+        elif devices['is_arm'] and devices['has_pocl'] and not devices['has_gpu']:
+            print("\n[!] WARNING: ARM CPU with PoCL - adding --force for compatibility")
+            cmd_parts.append("--force")
+            memory_profile = 'low'
+        elif devices['has_pocl'] and not devices['has_gpu'] and not devices['is_arm']:
+            print("\n[!] WARNING: PoCL detected - using --force and low workload")
+            cmd_parts.append("--force")
             if devices['is_low_memory']:
                 memory_profile = 'low'
         elif devices['has_metal'] or devices['has_gpu']:
@@ -2084,11 +2131,40 @@ class HashcatNexus:
 
                             if result.returncode != 0:
                                     print(f"\n[!] Phase 1 failed with return code {result.returncode}")
-                                    print("[*] This usually means:")
-                                    print("    - Hash mode is wrong")
-                                    print("    - Hash file format is invalid")
-                                    print("    - Rule file is corrupted")
-                                    print("    - GPU driver crash (try CPU-only)")
+                                    if result.returncode == -11 or result.returncode == 139:
+                                        devices = self.detect_available_devices()
+                                        print("[!] CRITICAL: Segmentation fault (SIGSEGV)")
+                                        if devices['is_macos'] and devices['has_metal']:
+                                            print("[*] macOS Metal backend crash detected")
+                                            print("[*] Solutions:")
+                                            print("    1. Reinstall hashcat: brew reinstall hashcat")
+                                            print("    2. Use CPU-only: add '-D 1' flag")
+                                            print("    3. Update macOS and GPU drivers")
+                                            print("    4. Try without Metal: --backend-ignore-metal")
+                                        else:
+                                            print("[*] GPU/OpenCL driver crash")
+                                            print("[*] Try CPU-only mode: add '-D 1' flag")
+                                    elif result.returncode == 255:
+                                        devices = self.detect_available_devices()
+                                        if devices['is_arm'] and devices['has_pocl']:
+                                            print("[!] CRITICAL: ARM + PoCL LLVM crash detected")
+                                            print("[*] WPA cracking on ARM VMs with PoCL is unsupported due to LLVM bugs")
+                                            print("[*] Solutions:")
+                                            print("    1. Use x86_64 VM/system instead of ARM")
+                                            print("    2. Build hashcat from source with fixed PoCL")
+                                            print("    3. Remove PoCL: sudo apt remove pocl-opencl-icd")
+                                            print("    4. Use physical machine with real GPU")
+                                        else:
+                                            print("[*] This usually means:")
+                                            print("    - OpenCL/GPU driver crash")
+                                            print("    - Insufficient memory")
+                                            print("    - LLVM compilation error")
+                                    else:
+                                        print("[*] This usually means:")
+                                        print("    - Hash mode is wrong")
+                                        print("    - Hash file format is invalid")
+                                        print("    - Rule file is corrupted")
+                                        print("    - GPU driver crash (try CPU-only)")
                                     print(f"\n[*] Try manually: {phase1_cmd}")
                                     return
 
@@ -2155,6 +2231,14 @@ class HashcatNexus:
 
                                             if result.returncode != 0:
                                                     print(f"[!] Mask {i} failed with return code {result.returncode}")
+                                                    if result.returncode == -11 or result.returncode == 139:
+                                                        devices = self.detect_available_devices()
+                                                        if devices['is_macos'] and devices['has_metal']:
+                                                            print("[!] macOS Metal SIGSEGV - use CPU mode")
+                                                    elif result.returncode == 255:
+                                                        devices = self.detect_available_devices()
+                                                        if devices['is_arm'] and devices['has_pocl']:
+                                                            print("[!] ARM + PoCL LLVM crash - WPA unsupported on this platform")
                                                     break
 
                                             current_status = self.check_remaining_hashes(hash_file, output_file)
@@ -2216,6 +2300,14 @@ class HashcatNexus:
 
                                                     if result.returncode != 0:
                                                             print(f"[!] Mask {i} failed with return code {result.returncode}")
+                                                            if result.returncode == -11 or result.returncode == 139:
+                                                                devices = self.detect_available_devices()
+                                                                if devices['is_macos'] and devices['has_metal']:
+                                                                    print("[!] macOS Metal SIGSEGV - use CPU mode")
+                                                            elif result.returncode == 255:
+                                                                devices = self.detect_available_devices()
+                                                                if devices['is_arm'] and devices['has_pocl']:
+                                                                    print("[!] ARM + PoCL LLVM crash - WPA unsupported on this platform")
                                                             break
 
                                                     current_status = self.check_remaining_hashes(hash_file, output_file)
@@ -2507,6 +2599,20 @@ class HashcatNexus:
                         print(f"\n[+] Attack completed successfully")
                     else:
                         print(f"\n[!] Attack finished with return code {result.returncode}")
+                        if result.returncode == -11 or result.returncode == 139:
+                            devices = self.detect_available_devices()
+                            print("[!] CRITICAL: Segmentation fault (SIGSEGV)")
+                            if devices['is_macos'] and devices['has_metal']:
+                                print("[*] macOS Metal backend crash - use CPU-only mode")
+                                print("[*] Reinstall: brew reinstall hashcat")
+                            else:
+                                print("[*] GPU/OpenCL crash - try CPU mode with '-D 1'")
+                        elif result.returncode == 255:
+                            devices = self.detect_available_devices()
+                            if devices['is_arm'] and devices['has_pocl']:
+                                print("\n[!] CRITICAL: ARM + PoCL LLVM crash")
+                                print("[*] WPA cracking unsupported on ARM VMs with PoCL")
+                                print("[*] Use x86_64 system or remove PoCL: sudo apt remove pocl-opencl-icd")
                 except KeyboardInterrupt:
                     print("\n\n" + "=" * 80)
                     print("[!] ATTACK INTERRUPTED BY USER (Ctrl+C)")
