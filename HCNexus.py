@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 HASHCAT NEXUS v3.0 - Next-Generation Password Cracking Optimizer
 Auto-detects hash types, vendor-specific schemas, and builds optimal attacks
@@ -42,9 +41,10 @@ class AttackProfile:
 
 class HashcatNexus:
     def __init__(self):
+        self.script_dir = Path(__file__).parent
         self.rules_dir = Path("~/.hashcat_nexus").expanduser()
         self.rules_dir.mkdir(parents=True, exist_ok=True)
-        self.wordlists_dir = self.rules_dir / "wordlists"
+        self.wordlists_dir = self.script_dir / "wordlists"
         self.wordlists_dir.mkdir(parents=True, exist_ok=True)
         self.cache_file = self.rules_dir / "rule_cache.json"
         self.benchmark_file = self.rules_dir / "benchmark.json"
@@ -55,10 +55,42 @@ class HashcatNexus:
         self.wpa_vendors = self._load_wpa_vendors()
         self.rule_db = self._initialize_rule_database()
         self.memory_profiles = {
-            'low': {'w': '1', 'O': False, 'max_len': '8'},
-            'medium': {'w': '2', 'O': True, 'max_len': '12'},
-            'high': {'w': '3', 'O': True, 'max_len': '14'},
-            'extreme': {'w': '4', 'O': True, 'max_len': '16'}
+            'low': {
+                'w': '1',
+                'O': True,
+                'max_len': '8',
+                'kernel_accel': '8',
+                'kernel_loops': '8',
+                'segment_size': '8',
+                'description': 'Minimal memory (< 1GB RAM, CPU only)'
+            },
+            'medium': {
+                'w': '2',
+                'O': True,
+                'max_len': '12',
+                'kernel_accel': '16',
+                'kernel_loops': '16',
+                'segment_size': '32',
+                'description': 'Balanced (2-4GB RAM, integrated GPU)'
+            },
+            'high': {
+                'w': '3',
+                'O': True,
+                'max_len': '14',
+                'kernel_accel': '32',
+                'kernel_loops': '32',
+                'segment_size': None,
+                'description': 'High performance (8GB+ RAM, dedicated GPU)'
+            },
+            'extreme': {
+                'w': '4',
+                'O': True,
+                'max_len': '16',
+                'kernel_accel': '64',
+                'kernel_loops': '64',
+                'segment_size': None,
+                'description': 'Maximum speed (16GB+ RAM, high-end GPU)'
+            }
         }
 
     def _verify_hashcat_installation(self):
@@ -540,7 +572,6 @@ class HashcatNexus:
             return "Standard: Comprehensive rules (OneRuleToRuleThemAll) + hybrid attacks"
 
     def download_rule(self, rule_name: str) -> Optional[Path]:
-        """Download and cache rules with validation - FIXED"""
         rule_info = self.rule_db.get(rule_name)
         if not rule_info:
             print(f"[-] Rule {rule_name} not found in database")
@@ -1374,7 +1405,7 @@ class HashcatNexus:
 
         if len(rules) == 0:
             print("\n[*] Running without rules - testing exact wordlist matches only")
-        
+
         print(f"\n[+] Final rule selection ({len(rules)}/{MAX_RULES}): {', '.join(rules) if rules else 'None (straight wordlist)'}")
         return rules
 
@@ -1481,7 +1512,6 @@ class HashcatNexus:
         }
 
     def detect_available_devices(self) -> Dict[str, Any]:
-        """Detect all available hashcat devices - FIXED FOR MAC"""
         try:
             result = subprocess.run(['hashcat', '-I'],
                                     capture_output=True, text=True, timeout=10)
@@ -1497,31 +1527,26 @@ class HashcatNexus:
                 'device_count': 1
             }
 
-            # Check for Metal (Apple Silicon/Intel Mac with Metal support)
             if 'Metal' in output or 'metal' in output.lower():
                 devices['has_metal'] = True
                 devices['has_gpu'] = True
                 devices['device_types'] = ['GPU (Metal)', 'CPU']
 
-            # Check for OpenCL GPU
             if 'OpenCL Platform' in output and 'GPU' in output:
                 devices['has_gpu'] = True
                 devices['has_opencl'] = True
                 if 'GPU (Metal)' not in devices['device_types']:
                     devices['device_types'].insert(0, 'GPU (OpenCL)')
 
-            # Check for CUDA
             if 'CUDA' in output:
                 devices['has_gpu'] = True
                 if 'GPU (CUDA)' not in devices['device_types']:
                     devices['device_types'].insert(0, 'GPU (CUDA)')
 
-            # Extract GPU memory
             memory_match = re.search(r'Memory\.Total\.\.\.\.\: (\d+) MB', output)
             if memory_match:
                 devices['gpu_memory'] = int(memory_match.group(1))
 
-            # Count devices
             device_count = output.count('Backend Device ID')
             if device_count > 0:
                 devices['device_count'] = device_count
@@ -1541,7 +1566,6 @@ class HashcatNexus:
             }
 
     def get_device_flags(self, hash_mode: int, use_gpu: bool = True) -> str:
-        """Get optimal device selection flags for macOS - FIXED"""
         devices = self.detect_available_devices()
 
         print("\n[*] Available Devices:")
@@ -1551,7 +1575,6 @@ class HashcatNexus:
         if devices['gpu_memory'] > 0:
             print(f"    [*] GPU Memory: {devices['gpu_memory']} MB")
 
-        # FIXED: Proper Mac detection
         if devices['has_metal']:
             print("\n[+] Using: GPU (Metal) - Apple Silicon or Intel Mac detected")
             return "-D 2"
@@ -1562,13 +1585,44 @@ class HashcatNexus:
             print("\n[+] Using: CPU only")
             return "-D 1"
 
+    def apply_memory_profile(self, cmd_parts: List[str], memory_profile: str, hash_mode: int = None) -> None:
+        """
+        Apply comprehensive memory optimization settings based on profile.
+        Modifies cmd_parts in-place to add all memory-related flags.
+        """
+        profile = self.memory_profiles.get(memory_profile, self.memory_profiles['medium'])
+
+        cmd_parts.extend(["-w", profile['w']])
+
+        if profile.get('O', False):
+            cmd_parts.append("-O")
+
+        if profile.get('kernel_accel'):
+            cmd_parts.extend(["--kernel-accel", profile['kernel_accel']])
+
+        if profile.get('kernel_loops'):
+            cmd_parts.extend(["--kernel-loops", profile['kernel_loops']])
+
+        if profile.get('segment_size'):
+            cmd_parts.extend(["--segment-size", profile['segment_size']])
+
+        if profile.get('max_len') and hash_mode not in [22000, 2500, 22001]:
+            if '--increment' in cmd_parts or '-a' in cmd_parts:
+                try:
+                    attack_mode_idx = cmd_parts.index('-a')
+                    attack_mode = cmd_parts[attack_mode_idx + 1]
+                    if attack_mode == '3':
+                        cmd_parts.extend(["--increment-max", profile['max_len']])
+                except (ValueError, IndexError):
+                    pass
+
     def build_attack_command(self, hash_file: str, hash_mode: int,
                             wordlists: List[str], rules: List[str],
                             vendor: str = None, memory_profile: str = 'medium',
                             output_file: str = None, session: str = None,
                             enable_brute: bool = False, use_gpu: bool = True) -> str:
         cmd_parts = ["hashcat", "-m", str(hash_mode)]
-        
+
         devices = self.detect_available_devices()
         if (devices['has_metal'] or devices['has_gpu']) and use_gpu:
             cmd_parts.extend(["-D", "2"])
@@ -1587,15 +1641,13 @@ class HashcatNexus:
 
         cmd_parts.extend(wordlists)
 
-        # FIXED: Only add rules if they exist and were provided
         if rules:
             for rule_name in rules:
                 rule_path = self.download_rule(rule_name)
                 if rule_path and rule_path.exists():
                     cmd_parts.extend(["-r", str(rule_path)])
 
-        profile = self.memory_profiles[memory_profile]
-        cmd_parts.extend(["-w", profile['w']])
+        self.apply_memory_profile(cmd_parts, memory_profile, hash_mode)
 
         if session:
             cmd_parts.extend(["--session", session])
@@ -1670,8 +1722,7 @@ class HashcatNexus:
         if hybrid_masks:
             cmd_parts.append(hybrid_masks[0])
 
-        profile = self.memory_profiles[memory_profile]
-        cmd_parts.extend(["-w", profile['w']])
+        self.apply_memory_profile(cmd_parts, memory_profile, hash_mode)
 
         if session:
             cmd_parts.extend(["--session", session])
@@ -1691,16 +1742,16 @@ class HashcatNexus:
         print("\n" + "=" * 80)
         print("[*] HYBRID MASK BUILDER - Interactive Mode")
         print("=" * 80)
-        
+
         print("\n[*] What are Hybrid Masks?")
         print("    Hybrid = Wordlist + Mask Pattern (e.g., password + ?d?d?d)")
         print("    Example: netgear.txt + ?d?d?d = netgear000, netgear001...netgear999\n")
-        
+
         masks = []
-        
+
         print("[*] Select mask patterns to append to your wordlist:")
         print("-" * 80)
-        
+
         predefined_masks = {
             '1': {
                 'mask': '?d?d',
@@ -1759,11 +1810,11 @@ class HashcatNexus:
                 'use_case': 'Advanced users'
             },
         }
-        
+
         while True:
             print("\n[*] Available hybrid mask patterns:")
             print()
-            
+
             for key, info in predefined_masks.items():
                 if info['mask'] != 'custom':
                     print(f"    {key}) {info['description']:<35} ({info['count']:>6,} combinations)")
@@ -1771,12 +1822,12 @@ class HashcatNexus:
                     print(f"       Use case: {info['use_case']}")
                 else:
                     print(f"    {key}) {info['description']}")
-            
+
             print(f"    9) View selected masks")
             print(f"    0) Done - proceed with attack")
-            
+
             choice = input("\n[*] Enter mask number (1-9, 0 to finish): ").strip()
-            
+
             if choice == '0':
                 break
             elif choice == '9':
@@ -1803,7 +1854,7 @@ class HashcatNexus:
                     print(f"[+] Added: {info['mask']}")
             else:
                 print("[-] Invalid choice")
-        
+
         return masks if masks else None
 
     def _validate_mask_syntax(self, mask: str) -> bool:
@@ -1825,24 +1876,24 @@ class HashcatNexus:
         print("\n" + "=" * 80)
         print("[*] HYBRID ATTACK PREVIEW")
         print("=" * 80)
-        
+
         total_combinations = 0
-        
+
         for mask, desc in masks:
             mask_combinations = self._estimate_mask_combinations(mask)
             attack_combinations = wordlist_size * mask_combinations
             total_combinations += attack_combinations
-            
+
             print(f"\n[+] Mask: {mask} ({desc})")
             print(f"    Combinations per word: {mask_combinations:,}")
             print(f"    Total candidates: {attack_combinations:,}")
-            
+
             samples = self._generate_sample_candidates("password", mask, 3)
             print(f"    Sample candidates: {', '.join(samples)}")
-        
+
         print(f"\n{'-' * 80}")
         print(f"[+] Total mask combinations: {total_combinations:,}")
-        
+
         time_est = self.estimate_attack_time(22000, wordlist_size, 0, 'medium')
         print(f"[*] Estimated time: {time_est['estimated_time']}")
         print(f"[*] Success probability: {time_est['success_probability']}")
@@ -1871,7 +1922,7 @@ class HashcatNexus:
             '?u': ['A', 'M', 'Z'],
             '?s': ['!', '@', '#'],
         }
-        
+
         def generate_one(w, m, idx=0):
             if idx >= len(m):
                 return w
@@ -1880,7 +1931,7 @@ class HashcatNexus:
                 return generate_one(w + next_char, m, idx + 2)
             else:
                 return generate_one(w + m[idx], m, idx + 1)
-        
+
         samples = []
         for i in range(count):
             samples.append(generate_one(word, mask))
@@ -1949,8 +2000,7 @@ class HashcatNexus:
 
         cmd_parts.extend(["--increment", "--increment-min", "8"])
 
-        profile = self.memory_profiles[memory_profile]
-        cmd_parts.extend(["-w", profile['w']])
+        self.apply_memory_profile(cmd_parts, memory_profile, hash_mode)
 
         if session:
             cmd_parts.extend(["--session", f"{session}_brute"])
@@ -1964,221 +2014,244 @@ class HashcatNexus:
         return " ".join(cmd_parts)
 
     def execute_multiphase_attack(self, hash_file: str, hash_mode: int,
-                                  wordlists: List[str], rules: List[str],
-                                  vendor: str = None, memory_profile: str = 'medium',
-                                  output_file: str = None, session: str = None,
-                                  enable_brute: bool = False,
-                                  hybrid_masks: List[Tuple[str, str]] = None):
-        """Execute multi-phase attack: wordlist+rules first, then brute force on remaining"""
+                                                                wordlists: List[str], rules: List[str],
+                                                                vendor: str = None, memory_profile: str = 'medium',
+                                                                output_file: str = None, session: str = None,
+                                                                enable_brute: bool = False,
+                                                                hybrid_masks: List[Tuple[str, str]] = None):
+            """Execute multi-phase attack: wordlist+rules first, then brute force on remaining"""
 
-        print("\n" + "=" * 80)
-        print("[*] MULTI-PHASE ATTACK EXECUTION")
-        print("=" * 80)
-
-        print("\n[*] PHASE 1: Wordlist + Rules Attack")
-        print("-" * 80)
-
-        if hybrid_masks:
-            phase1_cmd = self.build_hybrid_command(
-                hash_file=hash_file,
-                hash_mode=hash_mode,
-                wordlists=wordlists,
-                hybrid_masks=[m[0] for m in hybrid_masks],
-                vendor=vendor,
-                memory_profile=memory_profile,
-                output_file=output_file,
-                session=f"{session}_phase1" if session else None
-            )
-        else:
-            phase1_cmd = self.build_attack_command(
-                hash_file=hash_file,
-                hash_mode=hash_mode,
-                wordlists=wordlists,
-                rules=rules,
-                vendor=vendor,
-                memory_profile=memory_profile,
-                output_file=output_file,
-                session=f"{session}_phase1" if session else None,
-                enable_brute=False
-            )
-
-        print(f"\n[+] Phase 1 command:\n{phase1_cmd}\n")
-
-        execute = input("[*] Execute Phase 1 now? (Y/n): ").strip().lower()
-        if execute != 'n':
             print("\n" + "=" * 80)
-            print("[*] EXECUTING PHASE 1")
+            print("[*] MULTI-PHASE ATTACK EXECUTION")
             print("=" * 80)
-            print("\n[*] Press Ctrl+C anytime to stop and see progress\n")
 
-            try:
-                subprocess.run(phase1_cmd, shell=True)
-            except KeyboardInterrupt:
-                print("\n\n" + "=" * 80)
-                print("[!] ATTACK INTERRUPTED BY USER (Ctrl+C)")
-                print("=" * 80)
-                print("\n[*] Checking progress before exit...\n")
+            print("\n[*] PHASE 1: Wordlist + Rules Attack")
+            print("-" * 80)
 
-                if session:
-                    print(f"[*] To resume this attack later:")
-                    print(f"    hashcat --session {session}_phase1 --restore\n")
-
-        print("\n" + "=" * 80)
-        print("[*] PHASE 1 RESULTS")
-        print("=" * 80)
-
-        status = self.check_remaining_hashes(hash_file, output_file)
-        if 'error' not in status:
-            print(f"\n[+] Cracked: {status['cracked']}/{status['total']} ({status['progress_pct']:.1f}%)")
-            print(f"[*] Remaining: {status['remaining']} hashes")
-
-            if status['cracked'] > 0 and status['cracked_details']:
-                print(f"\n[+] CRACKED PASSWORDS ({len(status['cracked_details'])} total):")
-                print("-" * 80)
-                for i, detail in enumerate(status['cracked_details'], 1):
-                    parts = detail.split(':')
-                    if len(parts) >= 3:
-                        ssid = parts[-2]
-                        password = parts[-1]
-                        print(f"     {i:3}. {ssid:30} -> {password}")
-                print("-" * 80)
-
-            if output_file:
-                print(f"\n[+] Full results saved to: {output_file}")
-
-            if session and status['remaining'] > 0:
-                print(f"\n[*] To resume this attack later, use:")
-                print(f"    hashcat --session {session}_phase1 --restore")
-
-            if status['remaining'] > 0 and hash_mode in [22000, 2500] and hybrid_masks and len(hybrid_masks) > 1:
-                print("\n" + "=" * 80)
-                print("[*] PHASE 1.5: Running Additional Hybrid Masks")
-                print("-" * 80)
-
-                try:
-                    for i, (mask, desc) in enumerate(hybrid_masks[1:], 2):
-                        print(f"\n[*] Running mask {i}/{len(hybrid_masks)}: {mask} ({desc})")
-                        print("-" * 80)
-
-                        cmd = self.build_hybrid_command(
+            if hybrid_masks:
+                    phase1_cmd = self.build_hybrid_command(
                             hash_file=hash_file,
                             hash_mode=hash_mode,
                             wordlists=wordlists,
-                            hybrid_masks=[mask],
+                            hybrid_masks=[m[0] for m in hybrid_masks],
                             vendor=vendor,
                             memory_profile=memory_profile,
                             output_file=output_file,
-                            session=f"{session}_hybrid_m{i}" if session else None
-                        )
+                            session=f"{session}_phase1" if session else None
+                    )
+            else:
+                    phase1_cmd = self.build_attack_command(
+                            hash_file=hash_file,
+                            hash_mode=hash_mode,
+                            wordlists=wordlists,
+                            rules=rules,
+                            vendor=vendor,
+                            memory_profile=memory_profile,
+                            output_file=output_file,
+                            session=f"{session}_phase1" if session else None,
+                            enable_brute=False
+                    )
 
-                        subprocess.run(cmd, shell=True)
+            print(f"\n[+] Phase 1 command:\n{phase1_cmd}\n")
 
-                        current_status = self.check_remaining_hashes(hash_file, output_file)
-                        if current_status.get('remaining', 0) == 0:
-                            print("[+] All hashes cracked!")
-                            break
-                        elif 'error' not in current_status:
-                            print(f"    Progress: {current_status['cracked']}/{current_status['total']} cracked")
-                except KeyboardInterrupt:
-                    print("\n\n" + "=" * 80)
-                    print("[!] HYBRID ATTACK INTERRUPTED BY USER (Ctrl+C)")
-                    print("=" * 80)
-                    print("\n[*] Checking progress before continuing...\n")
-
-                    if session:
-                        print(f"[*] To resume:")
-                        print(f"    hashcat --session {session}_hybrid_m{i} --restore\n")
-
-                status = self.check_remaining_hashes(hash_file, output_file)
-                print(f"\n[+] After Hybrid Masks: {status['cracked']}/{status['total']} cracked")
-                print(f"[*] Remaining: {status['remaining']} hashes")
-
-            if enable_brute and status['remaining'] > 0 and hash_mode in [22000, 2500]:
-                print("\n" + "=" * 80)
-                print("[*] PHASE 2: Brute Force Mask Attack (Remaining Hashes)")
-                print("-" * 80)
-
-                masks = self.generate_wpa2_masks(vendor)
-                print(f"\n[+] Generated {len(masks)} optimized masks for WPA2")
-                print("    Masks:", ", ".join(masks[:3]), "..." if len(masks) > 3 else "")
-
-                phase2_cmd = self.build_bruteforce_command(
-                    hash_file=hash_file,
-                    hash_mode=hash_mode,
-                    masks=masks,
-                    vendor=vendor,
-                    memory_profile=memory_profile,
-                    output_file=output_file,
-                    session=f"{session}_phase2" if session else None
-                )
-
-                print(f"\n[+] Phase 2 command:\n{phase2_cmd}\n")
-                print(f"[!] Warning: Mask attacks can take significant time")
-                print(f"    Remaining {status['remaining']} hashes will be targeted\n")
-
-                execute_phase2 = input("[*] Execute Phase 2 now? (y/N): ").strip().lower()
-                if execute_phase2 == 'y':
+            execute = input("[*] Execute Phase 1 now? (Y/n): ").strip().lower()
+            if execute != 'n':
                     print("\n" + "=" * 80)
-                    print("[*] EXECUTING PHASE 2")
+                    print("[*] EXECUTING PHASE 1")
                     print("=" * 80)
                     print("\n[*] Press Ctrl+C anytime to stop and see progress\n")
 
                     try:
-                        for i, mask in enumerate(masks, 1):
-                            print(f"\n[*] Trying mask {i}/{len(masks)}: {mask}")
-                            mask_cmd = phase2_cmd.replace(masks[0], mask)
-                            subprocess.run(mask_cmd, shell=True)
+                            result = subprocess.run(phase1_cmd, shell=True)
 
-                            current_status = self.check_remaining_hashes(hash_file, output_file)
-                            if current_status['remaining'] == 0:
-                                print("\n[+] All hashes cracked!")
-                                break
+                            if result.returncode != 0:
+                                    print(f"\n[!] Phase 1 failed with return code {result.returncode}")
+                                    print("[*] This usually means:")
+                                    print("    - Hash mode is wrong")
+                                    print("    - Hash file format is invalid")
+                                    print("    - Rule file is corrupted")
+                                    print("    - GPU driver crash (try CPU-only)")
+                                    print(f"\n[*] Try manually: {phase1_cmd}")
+                                    return
+
                     except KeyboardInterrupt:
-                        print("\n\n" + "=" * 80)
-                        print("[!] PHASE 2 INTERRUPTED BY USER (Ctrl+C)")
-                        print("=" * 80)
-                        print("\n[*] Checking progress before exit...\n")
+                            print("\n\n" + "=" * 80)
+                            print("[!] INTERRUPTED BY USER (Ctrl+C)")
+                            print("=" * 80)
+                            print("\n[*] Checking progress before exit...\n")
 
-                        if session:
-                            print(f"[*] To resume Phase 2 brute force:")
-                            print(f"    hashcat --session {session}_phase2 --restore\n")
+                            if session:
+                                    print(f"[*] To resume this attack later:")
+                                    print(f"    hashcat --session {session}_phase1 --restore\n")
+                            return
 
-                    print("\n" + "=" * 80)
-                    print("[*] FINAL RESULTS")
-                    print("=" * 80)
+            print("\n" + "=" * 80)
+            print("[*] PHASE 1 RESULTS")
+            print("=" * 80)
 
-                    final_status = self.check_remaining_hashes(hash_file, output_file)
-                    if 'error' not in final_status:
-                        print(f"\n[+] Total cracked: {final_status['cracked']}/{final_status['total']} ({final_status['progress_pct']:.1f}%)")
-                        print(f"[*] Remaining: {final_status['remaining']} hashes")
+            status = self.check_remaining_hashes(hash_file, output_file)
+            if 'error' not in status:
+                    print(f"\n[+] Cracked: {status['cracked']}/{status['total']} ({status['progress_pct']:.1f}%)")
+                    print(f"[*] Remaining: {status['remaining']} hashes")
 
-                        if final_status['cracked'] > 0 and final_status['cracked_details']:
-                            print(f"\n[+] ALL CRACKED PASSWORDS ({len(final_status['cracked_details'])} total):")
+                    if status['cracked'] > 0 and status['cracked_details']:
+                            print(f"\n[+] CRACKED PASSWORDS ({len(status['cracked_details'])} total):")
                             print("-" * 80)
-                            for i, detail in enumerate(final_status['cracked_details'], 1):
-                                parts = detail.split(':')
-                                if len(parts) >= 3:
-                                    ssid = parts[-2]
-                                    password = parts[-1]
-                                    print(f"     {i:3}. {ssid:30} -> {password}")
+                            for i, detail in enumerate(status['cracked_details'], 1):
+                                    parts = detail.split(':')
+                                    if len(parts) >= 3:
+                                            ssid = parts[-2]
+                                            password = parts[-1]
+                                            print(f"     {i:3}. {ssid:30} -> {password}")
                             print("-" * 80)
 
-                        if output_file:
-                            print(f"\n[+] All results saved to: {output_file}")
-                            print(f"[*] View with: cat {output_file}")
-                            print(f"[*] Or use: hashcat --show -m 22000 {hash_file}")
+                    if output_file:
+                            print(f"\n[+] Full results saved to: {output_file}")
 
-                        if session and final_status['remaining'] > 0:
-                            print(f"\n[*] To continue this attack later:")
-                            print(f"    hashcat --session {session}_phase2 --restore")
-                else:
-                    print("\n[*] Phase 2 command saved above. Run manually when ready.")
-            elif enable_brute and status['remaining'] == 0:
-                print("\n[+] All hashes cracked in Phase 1! No brute force needed.")
-            elif enable_brute:
-                print(f"\n[!] Brute force only supported for WPA/WPA2 (modes 22000, 2500)")
-        else:
-            print(f"\n[!] Could not check status: {status['error']}")
+                    if session and status['remaining'] > 0:
+                            print(f"\n[*] To resume this attack later, use:")
+                            print(f"    hashcat --session {session}_phase1 --restore")
+
+                    if status['remaining'] > 0 and hash_mode in [22000, 2500] and hybrid_masks and len(hybrid_masks) > 1:
+                            print("\n" + "=" * 80)
+                            print("[*] PHASE 1.5: Running Additional Hybrid Masks")
+                            print("-" * 80)
+
+                            try:
+                                    for i, (mask, desc) in enumerate(hybrid_masks[1:], 2):
+                                            print(f"\n[*] Running mask {i}/{len(hybrid_masks)}: {mask} ({desc})")
+                                            print("-" * 80)
+
+                                            cmd = self.build_hybrid_command(
+                                                    hash_file=hash_file,
+                                                    hash_mode=hash_mode,
+                                                    wordlists=wordlists,
+                                                    hybrid_masks=[mask],
+                                                    vendor=vendor,
+                                                    memory_profile=memory_profile,
+                                                    output_file=output_file,
+                                                    session=f"{session}_hybrid_m{i}" if session else None
+                                            )
+
+                                            result = subprocess.run(cmd, shell=True)
+
+                                            if result.returncode != 0:
+                                                    print(f"[!] Mask {i} failed with return code {result.returncode}")
+                                                    break
+
+                                            current_status = self.check_remaining_hashes(hash_file, output_file)
+                                            if current_status.get('remaining', 0) == 0:
+                                                    print("[+] All hashes cracked!")
+                                                    break
+                                            elif 'error' not in current_status:
+                                                    print(f"    Progress: {current_status['cracked']}/{current_status['total']} cracked")
+                            except KeyboardInterrupt:
+                                    print("\n\n" + "=" * 80)
+                                    print("[!] HYBRID ATTACK INTERRUPTED BY USER (Ctrl+C)")
+                                    print("=" * 80)
+                                    print("\n[*] Checking progress before continuing...\n")
+
+                                    if session:
+                                            print(f"[*] To resume:")
+                                            print(f"    hashcat --session {session}_hybrid_m{i} --restore\n")
+                                    return
+
+                            status = self.check_remaining_hashes(hash_file, output_file)
+                            print(f"\n[+] After Hybrid Masks: {status['cracked']}/{status['total']} cracked")
+                            print(f"[*] Remaining: {status['remaining']} hashes")
+
+                    if enable_brute and status['remaining'] > 0 and hash_mode in [22000, 2500]:
+                            print("\n" + "=" * 80)
+                            print("[*] PHASE 2: Brute Force Mask Attack (Remaining Hashes)")
+                            print("-" * 80)
+
+                            masks = self.generate_wpa2_masks(vendor)
+                            print(f"\n[+] Generated {len(masks)} optimized masks for WPA2")
+                            print("    Masks:", ", ".join(masks[:3]), "..." if len(masks) > 3 else "")
+
+                            phase2_cmd = self.build_bruteforce_command(
+                                    hash_file=hash_file,
+                                    hash_mode=hash_mode,
+                                    masks=masks,
+                                    vendor=vendor,
+                                    memory_profile=memory_profile,
+                                    output_file=output_file,
+                                    session=f"{session}_phase2" if session else None
+                            )
+
+                            print(f"\n[+] Phase 2 command:\n{phase2_cmd}\n")
+                            print(f"[!] Warning: Mask attacks can take significant time")
+                            print(f"    Remaining {status['remaining']} hashes will be targeted\n")
+
+                            execute_phase2 = input("[*] Execute Phase 2 now? (y/N): ").strip().lower()
+                            if execute_phase2 == 'y':
+                                    print("\n" + "=" * 80)
+                                    print("[*] EXECUTING PHASE 2")
+                                    print("=" * 80)
+                                    print("\n[*] Press Ctrl+C anytime to stop and see progress\n")
+
+                                    try:
+                                            for i, mask in enumerate(masks, 1):
+                                                    print(f"\n[*] Trying mask {i}/{len(masks)}: {mask}")
+                                                    mask_cmd = phase2_cmd.replace(masks[0], mask)
+                                                    result = subprocess.run(mask_cmd, shell=True)
+
+                                                    if result.returncode != 0:
+                                                            print(f"[!] Mask {i} failed with return code {result.returncode}")
+                                                            break
+
+                                                    current_status = self.check_remaining_hashes(hash_file, output_file)
+                                                    if current_status['remaining'] == 0:
+                                                            print("\n[+] All hashes cracked!")
+                                                            break
+                                    except KeyboardInterrupt:
+                                            print("\n\n" + "=" * 80)
+                                            print("[!] PHASE 2 INTERRUPTED BY USER (Ctrl+C)")
+                                            print("=" * 80)
+                                            print("\n[*] Checking progress before exit...\n")
+
+                                            if session:
+                                                    print(f"[*] To resume Phase 2 brute force:")
+                                                    print(f"    hashcat --session {session}_phase2 --restore\n")
+                                            return
+
+                                    print("\n" + "=" * 80)
+                                    print("[*] FINAL RESULTS")
+                                    print("=" * 80)
+
+                                    final_status = self.check_remaining_hashes(hash_file, output_file)
+                                    if 'error' not in final_status:
+                                            print(f"\n[+] Total cracked: {final_status['cracked']}/{final_status['total']} ({final_status['progress_pct']:.1f}%)")
+                                            print(f"[*] Remaining: {final_status['remaining']} hashes")
+
+                                            if final_status['cracked'] > 0 and final_status['cracked_details']:
+                                                    print(f"\n[+] ALL CRACKED PASSWORDS ({len(final_status['cracked_details'])} total):")
+                                                    print("-" * 80)
+                                                    for i, detail in enumerate(final_status['cracked_details'], 1):
+                                                            parts = detail.split(':')
+                                                            if len(parts) >= 3:
+                                                                    ssid = parts[-2]
+                                                                    password = parts[-1]
+                                                                    print(f"     {i:3}. {ssid:30} -> {password}")
+                                                    print("-" * 80)
+
+                                            if output_file:
+                                                    print(f"\n[+] All results saved to: {output_file}")
+                                                    print(f"[*] View with: cat {output_file}")
+                                                    print(f"[*] Or use: hashcat --show -m 22000 {hash_file}")
+
+                                            if session and final_status['remaining'] > 0:
+                                                    print(f"\n[*] To continue this attack later:")
+                                                    print(f"    hashcat --session {session}_phase2 --restore")
+                            else:
+                                    print("\n[*] Phase 2 command saved above. Run manually when ready.")
+                    elif enable_brute and status['remaining'] == 0:
+                            print("\n[+] All hashes cracked in Phase 1! No brute force needed.")
+                    elif enable_brute:
+                            print(f"\n[!] Brute force only supported for WPA/WPA2 (modes 22000, 2500)")
+            else:
+                    print(f"\n[!] Could not check status: {status['error']}")
+                    return
 
     def interactive_wizard(self):
         """Interactive wizard mode"""
@@ -2201,7 +2274,7 @@ class HashcatNexus:
                 use_gpu = False
 
         while True:
-            hash_file = input("\n[*] Enter hash file path: ").strip()
+            hash_file = input("\n[*] Enter hash file path: ").strip().strip("'\"")
             if Path(hash_file).exists():
                 break
             print("[-] File not found. Please try again.")
@@ -2264,14 +2337,13 @@ class HashcatNexus:
                     print("[-] Invalid input. Please enter numbers separated by commas.")
 
         print("\n[*] Select memory profile:")
-        print("    1. Low RAM (< 4GB)")
-        print("    2. Medium RAM (4-8GB)")
-        print("    3. High RAM (8-16GB)")
-        print("    4. Extreme RAM (> 16GB)")
+        profiles = ['low', 'medium', 'high', 'extreme']
+        for i, profile_name in enumerate(profiles, 1):
+            desc = self.memory_profiles[profile_name]['description']
+            print(f"    {i}. {profile_name.capitalize()}: {desc}")
 
         while True:
             mem_choice = input("\n[*] Profile (1-4, default: 2): ").strip()
-            profiles = ['low', 'medium', 'high', 'extreme']
             if not mem_choice:
                 memory_profile = 'medium'
                 break
@@ -2280,6 +2352,16 @@ class HashcatNexus:
                 break
             else:
                 print("[-] Invalid choice.")
+
+        profile = self.memory_profiles[memory_profile]
+        print(f"\n[+] Using '{memory_profile}' profile:")
+        print(f"    [*] Workload: Level {profile['w']}")
+        if profile.get('O'):
+            print(f"    [*] Optimized kernels: Enabled (less memory, max length {profile['max_len']} chars)")
+        if profile.get('kernel_accel'):
+            print(f"    [*] Kernel tuning: accel={profile['kernel_accel']}, loops={profile['kernel_loops']}")
+        if profile.get('segment_size'):
+            print(f"    [*] Wordlist chunking: {profile['segment_size']}MB segments (prevents OOM)")
 
         wordlist_base = self.setup_wordlists()
 
