@@ -1514,17 +1514,28 @@ class HashcatNexus:
                 'has_gpu': False,
                 'has_metal': False,
                 'has_opencl': False,
+                'has_pocl': False,
+                'is_low_memory': False,
                 'device_types': ['CPU'],
                 'gpu_memory': 0,
                 'device_count': 1
             }
+
+            # Detect PoCL (known to crash with certain hash modes)
+            if 'PoCL' in output or 'pocl' in output.lower():
+                devices['has_pocl'] = True
+                devices['has_opencl'] = True
+                # Check for low memory allocation (< 1GB indicates constrained system)
+                mem_match = re.search(r'limited to (\d+) MB allocatable', output)
+                if mem_match and int(mem_match.group(1)) < 1024:
+                    devices['is_low_memory'] = True
 
             if 'Metal' in output or 'metal' in output.lower():
                 devices['has_metal'] = True
                 devices['has_gpu'] = True
                 devices['device_types'] = ['GPU (Metal)', 'CPU']
 
-            if 'OpenCL Platform' in output and 'GPU' in output:
+            if 'OpenCL Platform' in output and 'GPU' in output and not devices['has_pocl']:
                 devices['has_gpu'] = True
                 devices['has_opencl'] = True
                 if 'GPU (Metal)' not in devices['device_types']:
@@ -1612,10 +1623,19 @@ class HashcatNexus:
         cmd_parts = ["hashcat", "-m", str(hash_mode)]
 
         devices = self.detect_available_devices()
-        if (devices['has_metal'] or devices['has_gpu']) and use_gpu:
+
+        # Handle PoCL (known to segfault with WPA modes like 22000)
+        if devices['has_pocl'] and not devices['has_gpu']:
+            print("\n[!] WARNING: PoCL detected (CPU-only OpenCL)")
+            print("    PoCL is known to crash with WPA/WPA2 modes")
+            print("    Using --backend-ignore-opencl to avoid segfault")
+            cmd_parts.append("--backend-ignore-opencl")
+            # Force low workload for stability on constrained systems
+            if devices['is_low_memory']:
+                memory_profile = 'low'
+        elif (devices['has_metal'] or devices['has_gpu']) and use_gpu:
             cmd_parts.extend(["-D", "2"])
-        else:
-            cmd_parts.extend(["-D", "1"])
+        # Don't add -D flag if only PoCL available - let hashcat decide
 
         cmd_parts.extend(["--status", "--status-timer", "30", "-a", "0"])
         cmd_parts.append(hash_file)
@@ -1692,10 +1712,15 @@ class HashcatNexus:
         cmd_parts = ["hashcat", "-m", str(hash_mode)]
 
         devices = self.detect_available_devices()
-        if devices['has_metal'] or devices['has_gpu']:
+
+        # Handle PoCL (known to segfault with WPA modes like 22000)
+        if devices['has_pocl'] and not devices['has_gpu']:
+            print("\n[!] WARNING: PoCL detected - using --backend-ignore-opencl")
+            cmd_parts.append("--backend-ignore-opencl")
+            if devices['is_low_memory']:
+                memory_profile = 'low'
+        elif devices['has_metal'] or devices['has_gpu']:
             cmd_parts.extend(["-D", "2"])
-        else:
-            cmd_parts.extend(["-D", "1"])
 
         cmd_parts.extend(["--status", "--status-timer", "30", "-a", "6"])
         cmd_parts.append(hash_file)
@@ -1973,10 +1998,15 @@ class HashcatNexus:
         cmd_parts = ["hashcat", "-m", str(hash_mode)]
 
         devices = self.detect_available_devices()
-        if devices['has_metal'] or devices['has_gpu']:
+
+        # Handle PoCL (known to segfault with WPA modes like 22000)
+        if devices['has_pocl'] and not devices['has_gpu']:
+            print("\n[!] WARNING: PoCL detected - using --backend-ignore-opencl")
+            cmd_parts.append("--backend-ignore-opencl")
+            if devices['is_low_memory']:
+                memory_profile = 'low'
+        elif devices['has_metal'] or devices['has_gpu']:
             cmd_parts.extend(["-D", "2"])
-        else:
-            cmd_parts.extend(["-D", "1"])
 
         cmd_parts.extend(["--status", "--status-timer", "30"])
 
