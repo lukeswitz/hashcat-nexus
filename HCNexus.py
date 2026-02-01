@@ -57,21 +57,21 @@ class HashcatNexus:
         self.memory_profiles = {
             'low': {
                 'w': '1',
-                'O': True,
+                'O': True,  # Note: -O disabled for WPA modes to support full 63-char passwords
                 'max_len': '8',
                 'segment_size': '8',
                 'description': 'Minimal memory (< 1GB RAM, CPU only)'
             },
             'medium': {
                 'w': '2',
-                'O': True,
+                'O': True,  # Note: -O disabled for WPA modes to support full 63-char passwords
                 'max_len': '12',
                 'segment_size': '32',
                 'description': 'Balanced (2-4GB RAM, integrated GPU)'
             },
             'high': {
                 'w': '3',
-                'O': True,
+                'O': True,  # Note: -O disabled for WPA modes to support full 63-char passwords
                 'max_len': '14',
                 'segment_size': None,
                 'description': 'High performance (8GB+ RAM, dedicated GPU)'
@@ -1586,7 +1586,9 @@ class HashcatNexus:
 
         cmd_parts.extend(["-w", profile['w']])
 
-        if profile.get('O', False):
+        # Never use -O for WPA/WPA2 (modes 22000, 2500, 22001) as it limits password length
+        # WPA passwords can be up to 63 characters, but -O limits to much shorter lengths
+        if profile.get('O', False) and hash_mode not in [22000, 2500, 22001]:
             cmd_parts.append("-O")
 
         if profile.get('segment_size'):
@@ -2343,7 +2345,11 @@ class HashcatNexus:
         print(f"\n[+] Using '{memory_profile}' profile:")
         print(f"    [*] Workload: Level {profile['w']}")
         if profile.get('O'):
-            print(f"    [*] Optimized kernels: Enabled (less memory, max length {profile['max_len']} chars)")
+            # Only show -O message if it will actually be used (not WPA modes)
+            if hash_mode not in [22000, 2500, 22001]:
+                print(f"    [*] Optimized kernels: Enabled (less memory, max length {profile['max_len']} chars)")
+            else:
+                print(f"    [*] Optimized kernels: Disabled for WPA (supports full 8-63 character passwords)")
         if profile.get('segment_size'):
             print(f"    [*] Wordlist chunking: {profile['segment_size']}MB segments (prevents OOM)")
 
